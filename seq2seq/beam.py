@@ -85,4 +85,5 @@ class BeamSearchNode(object):
 
     def eval(self, alpha):
         """ Returns score of sequence up to this node """
+        # This change in log probability and constant 5 comes directly from the paper. 
         return self.logp / ((5 + abs(self.length)) ** alpha / ((5 + 1) ** alpha))
