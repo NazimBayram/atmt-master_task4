@@ -25,7 +25,7 @@ class BeamSearch(object):
         """ Adds a beam search path that ended in EOS (= finished sentence) """
         # ensure all node paths have the same length for batch ops
         missing = self.max_len - node.length
-        node.sequence = torch.cat((node.sequence.cpu(), torch.tensor([self.pad]*missing).long()))
+        node.sequence = torch.cat((node.sequence, torch.tensor([self.pad]*missing).long()))
         self.final.put((score, next(self._counter), node))
 
     def get_current_beams(self):
@@ -36,7 +36,7 @@ class BeamSearch(object):
             nodes.append((node[0], node[2]))
         return nodes
 
-    def get_best(self):
+    def get_best(self, cnt):
         """ Returns final node with the lowest negative log probability """
         # Merge EOS paths and those that were stopped by
         # max sequence length (still in nodes)
@@ -49,10 +49,13 @@ class BeamSearch(object):
             node = self.nodes.get()
             merged.put(node)
 
-        node = merged.get()
-        node = (node[0], node[2])
+        n1 = []
+        for _ in range(cnt):
+            node = merged.get()
+            node = (node[0], node[2])
+            n1.append(node)
 
-        return node
+        return n1
 
     def prune(self):
         """ Removes all nodes but the beam_size best ones (lowest neg log prob) """
@@ -85,5 +88,5 @@ class BeamSearchNode(object):
 
     def eval(self, alpha):
         """ Returns score of sequence up to this node """
-        # This change in log probability and constant 5 comes directly from the paper. 
+        # This change in log probability and constant 5 comes directly from the paper.
         return self.logp / ((5 + abs(self.length)) ** alpha / ((5 + 1) ** alpha))

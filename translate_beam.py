@@ -12,6 +12,10 @@ from seq2seq.data.dictionary import Dictionary
 from seq2seq.data.dataset import Seq2SeqDataset, BatchSampler
 from seq2seq.beam import BeamSearch, BeamSearchNode
 
+from collections import defaultdict
+
+
+
 
 def get_args():
     """ Defines generation-specific hyper-parameters. """
@@ -23,13 +27,14 @@ def get_args():
     parser.add_argument('--data', default='data_asg4/prepared_data', help='path to data directory')
     parser.add_argument('--checkpoint-path', default='checkpoints_asg4/checkpoint_best.pt', help='path to the model file')
     parser.add_argument('--batch-size', default=None, type=int, help='maximum number of sentences in a batch')
-    parser.add_argument('--output', default='model_translations_test.txt', type=str,
+    parser.add_argument('--output', default='model_translations_task4.txt', type=str,
                         help='path to the output file destination')
     parser.add_argument('--max-len', default=100, type=int, help='maximum length of generated sequence')
 
     # Add beam search arguments
-    parser.add_argument('--beam-size', default=3, type=int, help='number of hypotheses expanded in beam search')
+    parser.add_argument('--beam-size', default=5, type=int, help='number of hypotheses expanded in beam search')
     parser.add_argument('--alpha', default=0.9, type=float, help='defined alpha for the length normalization')
+    parser.add_argument('--nbest', default=4, type=int, help='number of different translations')
 
     return parser.parse_args()
 
@@ -70,7 +75,7 @@ def main(args):
     progress_bar = tqdm(test_loader, desc='| Generation', leave=False)
 
     # Iterate over the test set
-    all_hyps = {}
+    all_hyps = defaultdict(list)
     for i, sample in enumerate(progress_bar):
 
         # Create a beam search object or every input sentence in batch
@@ -93,7 +98,7 @@ def main(args):
             log_probs, next_candidates = torch.topk(torch.log(torch.softmax(decoder_out, dim=2)),
                                                     args.beam_size+1, dim=-1)
 
-        # Create number of beam_size beam search nodes for every input sentence
+        # Create number of beam_size beam search nodes for every input sentence
         for i in range(batch_size):
             for j in range(args.beam_size):
                 best_candidate = next_candidates[i, :, j]
@@ -146,7 +151,7 @@ def main(args):
             # see __QUESTION 2
             log_probs, next_candidates = torch.topk(torch.log(torch.softmax(decoder_out, dim=2)), args.beam_size+1, dim=-1)
 
-            # Create number of beam_size next nodes for every current node
+            # Create number of beam_size next nodes for every current node
             for i in range(log_probs.shape[0]):
                 for j in range(args.beam_size):
 
@@ -185,7 +190,7 @@ def main(args):
                 search.prune()
 
         # Segment into sentences
-        best_sents = torch.stack([search.get_best()[1].sequence[1:].cpu() for search in searches])
+        best_sents = torch.stack([node[1].sequence[1:] for search in searches for node in search.get_best(args.nbest)])
         decoded_batch = best_sents.numpy()
 
         output_sentences = [decoded_batch[row, :] for row in range(decoded_batch.shape[0])]
@@ -203,15 +208,19 @@ def main(args):
         # Convert arrays of indices into strings of words
         output_sentences = [tgt_dict.string(sent) for sent in output_sentences]
 
+        cnt = -1
         for ii, sent in enumerate(output_sentences):
-            all_hyps[int(sample['id'].data[ii])] = sent
+            if ii % args.nbest == 0:
+                cnt += 1
+            all_hyps[int(sample['id'].data[cnt])].append(sent)
 
 
     # Write to file
     if args.output is not None:
         with open(args.output, 'w') as out_file:
             for sent_id in range(len(all_hyps.keys())):
-                out_file.write(all_hyps[sent_id] + '\n')
+                for s in all_hyps[sent_id]:
+                    out_file.write(s + '\n')
 
 
 if __name__ == '__main__':
